@@ -13,14 +13,14 @@
 #include "function.h"
 #include "gitinfo.h"
 #include <LIEF/LIEF.hpp>
-#include <stdio.h>
-#include <inttypes.h>
 #include <getopt.h>
+#include <inttypes.h>
+#include <stdio.h>
 
 void print_help()
 {
-    char revision[12] = { 0 };
-    const char* version = GitTag[0] == 'v' ? GitTag : GitShortSHA1;
+    char revision[12] = {0};
+    const char *version = GitTag[0] == 'v' ? GitTag : GitShortSHA1;
 
     if (GitTag[0] != 'v') {
         snprintf(revision, sizeof(revision), "r%d ", GitRevision);
@@ -42,10 +42,19 @@ void print_help()
         "                  hexidecimal notation.\n"
         "  -n --nametable  File containing address to symbols mappings.\n"
         "  --section       Section to target for dissassembly, defaults to '.text'.\n"
+        "  --listsections  Prints a list of sections in the exe and their address and size.\n"
         "  -h --help       Displays this help.\n\n",
         revision,
         GitUncommittedChanges ? "~" : "",
         version);
+}
+
+void print_sections(unassemblize::Executable &exe)
+{
+    for (auto it = exe.sections().begin(); it != exe.sections().end(); ++it) {
+        printf(
+            "Name: %s, Address: 0x%" PRIx64 " Size: %" PRIu64 "\n", it->first.c_str(), it->second.address, it->second.size);
+    }
 }
 
 int main(int argc, char **argv)
@@ -55,13 +64,14 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    const char* section_name = ".text";
-    const char* output = nullptr;
-    const char* name_file = nullptr;
-    const char* manifest_file = nullptr;
-    const char* format_string = nullptr;
+    const char *section_name = ".text";
+    const char *output = nullptr;
+    const char *name_file = nullptr;
+    const char *manifest_file = nullptr;
+    const char *format_string = nullptr;
     uint64_t start_addr = 0;
     uint64_t end_addr = 0;
+    bool print_secs = 0;
 
     while (true) {
         static struct option long_options[] = {
@@ -72,6 +82,7 @@ int main(int argc, char **argv)
             {"nametable", required_argument, nullptr, 'n'},
             {"manifest", required_argument, nullptr, 'm'},
             {"section", required_argument, nullptr, 1},
+            {"listsections", no_argument, nullptr, 2},
             {"help", no_argument, nullptr, 'h'},
             {nullptr, no_argument, nullptr, 0},
         };
@@ -85,49 +96,70 @@ int main(int argc, char **argv)
         }
 
         switch (c) {
-        case 1:
-            section_name = optarg;
-            break;
-        case 'o':
-            output = optarg;
-            break;
-        case 'f':
-            format_string = optarg;
-            break;
-        case 's':
-            start_addr = strtoull(optarg, nullptr, 16);
-            break;
-        case 'e':
-            end_addr = strtoull(optarg, nullptr, 16);
-            break;
-        case 'n':
-            name_file = optarg;
-            break;
-        case 'm':
-            manifest_file = optarg;
-            break;
-        case '?':
-            printf("\nOption %d not recognised.\n", optopt);
-            print_help();
-            return 0;
-        case ':':
-            printf("\nAn option is missing arguments.\n");
-            print_help();
-            return 0;
-        case 'h':
-            print_help();
-            break;
-        default:
-            break;
+            case 1:
+                section_name = optarg;
+                break;
+            case 2:
+                print_secs = true;
+                break;
+            case 'o':
+                output = optarg;
+                break;
+            case 'f':
+                format_string = optarg;
+                break;
+            case 's':
+                start_addr = strtoull(optarg, nullptr, 16);
+                break;
+            case 'e':
+                end_addr = strtoull(optarg, nullptr, 16);
+                break;
+            case 'n':
+                name_file = optarg;
+                break;
+            case 'm':
+                manifest_file = optarg;
+                break;
+            case '?':
+                printf("\nOption %d not recognised.\n", optopt);
+                print_help();
+                return 0;
+            case ':':
+                printf("\nAn option is missing arguments.\n");
+                print_help();
+                return 0;
+            case 'h':
+                print_help();
+                break;
+            default:
+                break;
         }
     }
 
     unassemblize::Executable exe(argv[optind]);
-    unassemblize::Function func(exe, section_name, start_addr, end_addr);
+
+    if (print_secs) {
+        print_sections(exe);
+    }
+
+    FILE *fp = nullptr;
+    if (output != nullptr) {
+        fp = fopen(output, "w+");
+    }
 
     if (start_addr != 0 && end_addr != 0) {
+        unassemblize::Function func(exe, section_name, start_addr, end_addr);
         func.disassemble();
-        printf("%s", func.dissassembly().c_str());
+
+        if (fp != nullptr) {
+            fprintf(fp,
+                ".intel_syntax noprefix\n\n.globl sub_%" PRIx64 "\nsub_%" PRIx64 ":\n%s",
+                start_addr,
+                start_addr,
+                func.dissassembly().c_str());
+        } else {
+            printf("%s", func.dissassembly().c_str());
+        }
     }
 
     return 0;

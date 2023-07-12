@@ -1,8 +1,8 @@
 #include "function.h"
 #include <Zydis/Zydis.h>
-#include <zycore/Format.h>
 #include <inttypes.h>
 #include <sstream>
+#include <zycore/Format.h>
 
 namespace
 {
@@ -52,25 +52,199 @@ ZydisFormatterFunc default_print_address_absolute;
 static ZyanStatus UnasmFormatterPrintAddressAbsolute(
     const ZydisFormatter *formatter, ZydisFormatterBuffer *buffer, ZydisFormatterContext *context)
 {
-    unassemblize::Function *func = static_cast <unassemblize::Function*>(context->user_data);
+    unassemblize::Function *func = static_cast<unassemblize::Function *>(context->user_data);
     uint64_t address;
     ZYAN_CHECK(ZydisCalcAbsoluteAddress(context->instruction, context->operand, context->runtime_address, &address));
+    // context->instruction.info.raw.imm->is_relative
+    if (context->instruction->raw.imm->is_relative) {
+        if (func->labels().find(address) != func->labels().end()) {
+            ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+            ZyanString *string;
+            ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+            auto it = func->labels().find(address);
+            return ZyanStringAppendFormat(string, "%s", it->second.c_str());
+        } else if (address >= func->section_address() && address <= func->section_end()) {
+            // Probably a function if the address is in the current section.
+            ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+            ZyanString *string;
+            ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+            const std::string &symbol = func->executable().get_symbol(address);
 
-    if (func->labels().find(address) != func->labels().end()) {
-        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
-        ZyanString *string;
-        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-        auto it = func->labels().find(address);
-        return ZyanStringAppendFormat(string, "%s", it->second.c_str());
-    } else if (address >= func->section_address() && address <= func->section_end()) {
+            if (!symbol.empty()) {
+                return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+            }
+
+            return ZyanStringAppendFormat(string, "sub_%x", address);
+        } else if (address >= func->executable().base_address() && address <= func->executable().end_address()) {
+            // Data if in another section?
+            ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+            ZyanString *string;
+            ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+            const std::string &symbol = func->executable().get_symbol(address);
+
+            if (!symbol.empty()) {
+                return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+            }
+
+            return ZyanStringAppendFormat(string, "off_%x", address);
+        }
+    }
+
+    return default_print_address_absolute(formatter, buffer, context);
+}
+
+ZydisFormatterFunc default_print_address_relative;
+
+static ZyanStatus UnasmFormatterPrintAddressRelative(
+    const ZydisFormatter *formatter, ZydisFormatterBuffer *buffer, ZydisFormatterContext *context)
+{
+    unassemblize::Function *func = static_cast<unassemblize::Function *>(context->user_data);
+    uint64_t address;
+    ZYAN_CHECK(ZydisCalcAbsoluteAddress(context->instruction, context->operand, context->runtime_address, &address));
+    if (context->instruction->raw.imm->is_relative) {
+        if (func->labels().find(address) != func->labels().end()) {
+            ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+            ZyanString *string;
+            ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+            auto it = func->labels().find(address);
+            return ZyanStringAppendFormat(string, "%s", it->second.c_str());
+        } else if (address >= func->section_address() && address <= func->section_end()) {
+            // Probably a function if the address is in the current section.
+            ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+            ZyanString *string;
+            ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+            const std::string &symbol = func->executable().get_symbol(address);
+
+            if (!symbol.empty()) {
+                return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+            }
+
+            return ZyanStringAppendFormat(string, "sub_%x", address);
+        } else if (address >= func->executable().base_address() && address <= func->executable().end_address()) {
+            // Data if in another section?
+            ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+            ZyanString *string;
+            ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+            const std::string &symbol = func->executable().get_symbol(address);
+
+            if (!symbol.empty()) {
+                return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+            }
+
+            return ZyanStringAppendFormat(string, "off_%x", address);
+        }
+    }
+
+    return default_print_address_relative(formatter, buffer, context);
+}
+
+ZydisFormatterFunc default_print_immediate;
+
+static ZyanStatus UnasmFormatterPrintIMM(
+    const ZydisFormatter *formatter, ZydisFormatterBuffer *buffer, ZydisFormatterContext *context)
+{
+    unassemblize::Function *func = static_cast<unassemblize::Function *>(context->user_data);
+    uint64_t address = context->operand->imm.value.u;
+    if (address >= func->section_address() && address <= func->section_end()) {
         // Probably a function if the address is in the current section.
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
         ZyanString *string;
         ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        const std::string &symbol = func->executable().get_symbol(address);
+
+        if (!symbol.empty()) {
+            return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+        }
+
         return ZyanStringAppendFormat(string, "sub_%x", address);
+    } else if (address >= func->executable().base_address() && address <= (func->executable().end_address())) {
+        // Data if in another section?
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        const std::string &symbol = func->executable().get_symbol(address);
+
+        if (!symbol.empty()) {
+            return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+        }
+
+        return ZyanStringAppendFormat(string, "off_%x", address);
     }
 
-    return default_print_address_absolute(formatter, buffer, context);
+    return default_print_immediate(formatter, buffer, context);
+}
+
+ZydisFormatterFunc default_print_displacement;
+
+static ZyanStatus UnasmFormatterPrintDISP(
+    const ZydisFormatter *formatter, ZydisFormatterBuffer *buffer, ZydisFormatterContext *context)
+{
+    unassemblize::Function *func = static_cast<unassemblize::Function *>(context->user_data);
+    uint64_t address = context->operand->mem.disp.value;
+    if (address >= func->section_address() && address <= func->section_end()) {
+        // Probably a function if the address is in the current section.
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        const std::string &symbol = func->executable().get_symbol(address);
+
+        if (!symbol.empty()) {
+            return ZyanStringAppendFormat(string, "+%s", symbol.c_str());
+        }
+
+        return ZyanStringAppendFormat(string, "+sub_%x", address);
+    } else if (address >= func->executable().base_address() && address <= (func->executable().end_address())) {
+        // Data if in another section?
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        const std::string &symbol = func->executable().get_symbol(address);
+
+        if (!symbol.empty()) {
+            return ZyanStringAppendFormat(string, "+%s", symbol.c_str());
+        }
+
+        return ZyanStringAppendFormat(string, "+off_%x", address);
+    }
+
+    return default_print_displacement(formatter, buffer, context);
+}
+
+ZydisFormatterFunc default_format_operand_ptr;
+
+static ZyanStatus UnasmFormatterFormatOperandPTR(
+    const ZydisFormatter *formatter, ZydisFormatterBuffer *buffer, ZydisFormatterContext *context)
+{
+    unassemblize::Function *func = static_cast<unassemblize::Function *>(context->user_data);
+    uint64_t address = context->operand->ptr.offset;
+
+    if (address >= func->section_address() && address <= func->section_end()) {
+        // Probably a function if the address is in the current section.
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        const std::string &symbol = func->executable().get_symbol(address);
+
+        if (!symbol.empty()) {
+            return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+        }
+
+        return ZyanStringAppendFormat(string, "sub_%x", address);
+    } else if (address >= func->executable().base_address() && address <= func->executable().end_address()) {
+        // Data if in another section?
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        const std::string &symbol = func->executable().get_symbol(address);
+
+        if (!symbol.empty()) {
+            return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+        }
+
+        return ZyanStringAppendFormat(string, "unk_%x", address);
+    }
+
+    return default_format_operand_ptr(formatter, buffer, context);
 }
 
 static ZyanStatus UnasmDisassembleCustom(ZydisMachineMode machine_mode, ZyanU64 runtime_address, const void *buffer,
@@ -117,6 +291,19 @@ static ZyanStatus UnasmDisassembleCustom(ZydisMachineMode machine_mode, ZyanU64 
     ZydisFormatterSetHook(
         &formatter, ZYDIS_FORMATTER_FUNC_PRINT_ADDRESS_ABS, (const void **)&default_print_address_absolute);
 
+    default_print_immediate = (ZydisFormatterFunc)&UnasmFormatterPrintIMM;
+    ZydisFormatterSetHook(&formatter, ZYDIS_FORMATTER_FUNC_PRINT_IMM, (const void **)&default_print_immediate);
+
+    default_print_address_relative = (ZydisFormatterFunc)&UnasmFormatterPrintAddressRelative;
+    ZydisFormatterSetHook(
+        &formatter, ZYDIS_FORMATTER_FUNC_PRINT_ADDRESS_REL, (const void **)&default_print_address_relative);
+
+    default_print_displacement = (ZydisFormatterFunc)&UnasmFormatterPrintDISP;
+    ZydisFormatterSetHook(&formatter, ZYDIS_FORMATTER_FUNC_PRINT_DISP, (const void **)&default_print_displacement);
+
+    default_format_operand_ptr = (ZydisFormatterFunc)&UnasmFormatterFormatOperandPTR;
+    ZydisFormatterSetHook(&formatter, ZYDIS_FORMATTER_FUNC_FORMAT_OPERAND_PTR, (const void **)&default_format_operand_ptr);
+
     ZYAN_CHECK(ZydisFormatterFormatInstruction(&formatter,
         &instruction->info,
         instruction->operands,
@@ -147,9 +334,9 @@ void unassemblize::Function::disassemble()
                m_executable.section_data(m_section.c_str()) + offset,
                96,
                &instruction))
-        && offset < end_offset) {
+        && offset <= end_offset) {
         if (instruction.info.raw.imm->is_relative) {
-            uint64_t address; 
+            uint64_t address;
             ZydisCalcAbsoluteAddress(&instruction.info, instruction.operands, runtime_address, &address);
 
             if (address >= m_startAddress && address <= m_endAddress && m_labels.find(address) == m_labels.end()) {
@@ -172,7 +359,7 @@ void unassemblize::Function::disassemble()
                96,
                &instruction,
                this))
-        && offset < end_offset) {
+        && offset <= end_offset) {
         if (m_labels.find(runtime_address) != m_labels.end()) {
             m_dissassembly += m_labels[runtime_address];
             m_dissassembly += ":\n";
