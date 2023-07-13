@@ -41,8 +41,10 @@ void print_help()
         "  -e --end        Ending address of a single function to dissassemble in\n"
         "                  hexidecimal notation.\n"
         "  -n --nametable  File containing address to symbols mappings.\n"
+        "  -v --verbose    Verbose output on current state of the program.\n"
         "  --section       Section to target for dissassembly, defaults to '.text'.\n"
-        "  --listsections  Prints a list of sections in the exe and their address and size.\n"
+        "  --listsections  Prints a list of sections in the exe then exits.\n"
+        "  --dumpsyms      Dumps symbols stored in the executable to a json file then exits.\n"
         "  -h --help       Displays this help.\n\n",
         revision,
         GitUncommittedChanges ? "~" : "",
@@ -71,7 +73,9 @@ int main(int argc, char **argv)
     const char *format_string = nullptr;
     uint64_t start_addr = 0;
     uint64_t end_addr = 0;
-    bool print_secs = 0;
+    bool print_secs = false;
+    bool dump_syms = false;
+    bool verbose = false;
 
     while (true) {
         static struct option long_options[] = {
@@ -83,13 +87,15 @@ int main(int argc, char **argv)
             {"manifest", required_argument, nullptr, 'm'},
             {"section", required_argument, nullptr, 1},
             {"listsections", no_argument, nullptr, 2},
+            {"dumpsyms", no_argument, nullptr, 3},
+            {"verbose", no_argument, nullptr, 'v'},
             {"help", no_argument, nullptr, 'h'},
             {nullptr, no_argument, nullptr, 0},
         };
 
         int option_index = 0;
 
-        int c = getopt_long(argc, argv, "+h?o:f:s:e:n:f:m:", long_options, &option_index);
+        int c = getopt_long(argc, argv, "+hv?o:f:s:e:n:f:m:", long_options, &option_index);
 
         if (c == -1) {
             break;
@@ -101,6 +107,9 @@ int main(int argc, char **argv)
                 break;
             case 2:
                 print_secs = true;
+                break;
+            case 3:
+                dump_syms = true;
                 break;
             case 'o':
                 output = optarg;
@@ -120,6 +129,9 @@ int main(int argc, char **argv)
             case 'm':
                 manifest_file = optarg;
                 break;
+            case 'v':
+                verbose = true;
+                break;
             case '?':
                 printf("\nOption %d not recognised.\n", optopt);
                 print_help();
@@ -136,10 +148,31 @@ int main(int argc, char **argv)
         }
     }
 
-    unassemblize::Executable exe(argv[optind]);
+    if (verbose) {
+        printf("Parsing executable file '%s'...\n", argv[optind]);
+    }
+
+    unassemblize::Executable exe(argv[optind], verbose);
 
     if (print_secs) {
         print_sections(exe);
+        return 0;
+    }
+
+    if (dump_syms) {
+        if (output == nullptr) {
+            output = "syms.json";
+        }
+
+        exe.dump_symbols(output);
+        return 0;
+    }
+
+    if (name_file != nullptr) {
+        if (verbose) {
+            printf("Loading external symbol file '%s'...\n", name_file);
+        }
+        exe.load_symbols(name_file);
     }
 
     FILE *fp = nullptr;
@@ -152,11 +185,18 @@ int main(int argc, char **argv)
         func.disassemble();
 
         if (fp != nullptr) {
-            fprintf(fp,
-                ".intel_syntax noprefix\n\n.globl sub_%" PRIx64 "\nsub_%" PRIx64 ":\n%s",
-                start_addr,
-                start_addr,
-                func.dissassembly().c_str());
+            const std::string &sym = exe.get_symbol(start_addr).name;
+
+            if (!sym.empty()) {
+                fprintf(fp, ".intel_syntax noprefix\n\n.globl %s\n%s:\n%s", sym.c_str(), sym.c_str(),
+                    func.dissassembly().c_str());
+            } else {
+                fprintf(fp,
+                    ".intel_syntax noprefix\n\n.globl sub_%" PRIx64 "\nsub_%" PRIx64 ":\n%s",
+                    start_addr,
+                    start_addr,
+                    func.dissassembly().c_str());
+            }
         } else {
             printf("%s", func.dissassembly().c_str());
         }

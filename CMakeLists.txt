@@ -50,6 +50,13 @@ set(LIEF_PYTHON_API OFF)
 set(LIEF_TESTS OFF)
 FetchContent_MakeAvailable(lief)
 
+FetchContent_Declare(
+    json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        bc889afb4c5bf1c0d8ee29ef35eaaf4c8bef8a5d
+)
+FetchContent_MakeAvailable(json)
+
 set(GIT_PRE_CONFIGURE_FILE "gitinfo.cpp.in")
 set(GIT_POST_CONFIGURE_FILE "${CMAKE_CURRENT_BINARY_DIR}/gitinfo.cpp")
 include(GitWatcher)
@@ -64,9 +71,8 @@ target_sources(unassemblize PRIVATE
     function.cpp
     function.h
     main.cpp
-    symbols.cpp
-    symbols.h)
-target_link_libraries(unassemblize PRIVATE Zydis LIEF::LIEF)
+)
+target_link_libraries(unassemblize PRIVATE Zydis LIEF::LIEF nlohmann_json)
 target_include_directories(unassemblize PRIVATE .)
 
 if(WINDOWS)

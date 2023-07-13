@@ -55,7 +55,7 @@ static ZyanStatus UnasmFormatterPrintAddressAbsolute(
     unassemblize::Function *func = static_cast<unassemblize::Function *>(context->user_data);
     uint64_t address;
     ZYAN_CHECK(ZydisCalcAbsoluteAddress(context->instruction, context->operand, context->runtime_address, &address));
-    // context->instruction.info.raw.imm->is_relative
+
     if (context->instruction->raw.imm->is_relative) {
         if (func->labels().find(address) != func->labels().end()) {
             ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
@@ -68,22 +68,22 @@ static ZyanStatus UnasmFormatterPrintAddressAbsolute(
             ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
             ZyanString *string;
             ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-            const std::string &symbol = func->executable().get_symbol(address);
+            const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-            if (!symbol.empty()) {
-                return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+            if (!symbol.name.empty() && symbol.value == address) {
+                return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
             }
 
             return ZyanStringAppendFormat(string, "sub_%x", address);
         } else if (address >= func->executable().base_address() && address <= func->executable().end_address()) {
-            // Data if in another section?
+            // Data is in another section?
             ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
             ZyanString *string;
             ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-            const std::string &symbol = func->executable().get_symbol(address);
+            const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-            if (!symbol.empty()) {
-                return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+            if (!symbol.name.empty() && symbol.value == address) {
+                return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
             }
 
             return ZyanStringAppendFormat(string, "off_%x", address);
@@ -113,10 +113,10 @@ static ZyanStatus UnasmFormatterPrintAddressRelative(
             ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
             ZyanString *string;
             ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-            const std::string &symbol = func->executable().get_symbol(address);
+            const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-            if (!symbol.empty()) {
-                return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+            if (!symbol.name.empty() && symbol.value == address) {
+                return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
             }
 
             return ZyanStringAppendFormat(string, "sub_%x", address);
@@ -125,10 +125,10 @@ static ZyanStatus UnasmFormatterPrintAddressRelative(
             ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
             ZyanString *string;
             ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-            const std::string &symbol = func->executable().get_symbol(address);
+            const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-            if (!symbol.empty()) {
-                return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+            if (!symbol.name.empty() && symbol.value == address) {
+                return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
             }
 
             return ZyanStringAppendFormat(string, "off_%x", address);
@@ -145,15 +145,16 @@ static ZyanStatus UnasmFormatterPrintIMM(
 {
     unassemblize::Function *func = static_cast<unassemblize::Function *>(context->user_data);
     uint64_t address = context->operand->imm.value.u;
+    
     if (address >= func->section_address() && address <= func->section_end()) {
         // Probably a function if the address is in the current section.
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
         ZyanString *string;
         ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-        const std::string &symbol = func->executable().get_symbol(address);
+        const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-        if (!symbol.empty()) {
-            return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+        if (!symbol.name.empty() && symbol.value == address) {
+            return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
         }
 
         return ZyanStringAppendFormat(string, "sub_%x", address);
@@ -162,10 +163,10 @@ static ZyanStatus UnasmFormatterPrintIMM(
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
         ZyanString *string;
         ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-        const std::string &symbol = func->executable().get_symbol(address);
+        const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-        if (!symbol.empty()) {
-            return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+        if (!symbol.name.empty() && symbol.value == address) {
+            return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
         }
 
         return ZyanStringAppendFormat(string, "off_%x", address);
@@ -186,10 +187,15 @@ static ZyanStatus UnasmFormatterPrintDISP(
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
         ZyanString *string;
         ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-        const std::string &symbol = func->executable().get_symbol(address);
+        const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-        if (!symbol.empty()) {
-            return ZyanStringAppendFormat(string, "+%s", symbol.c_str());
+        if (!symbol.name.empty()) {
+            if (symbol.value == address) {
+                return ZyanStringAppendFormat(string, "+%s", symbol.name.c_str());
+            } else {
+                uint64_t diff = address - symbol.value; // value should always be lower than requested address.
+                return ZyanStringAppendFormat(string, "+%s+0x%", symbol.name.c_str(), diff);
+            }
         }
 
         return ZyanStringAppendFormat(string, "+sub_%x", address);
@@ -198,10 +204,15 @@ static ZyanStatus UnasmFormatterPrintDISP(
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
         ZyanString *string;
         ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-        const std::string &symbol = func->executable().get_symbol(address);
+        const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-        if (!symbol.empty()) {
-            return ZyanStringAppendFormat(string, "+%s", symbol.c_str());
+        if (!symbol.name.empty()) {
+            if (symbol.value == address) {
+                return ZyanStringAppendFormat(string, "+%s", symbol.name.c_str());
+            } else {
+                uint64_t diff = address - symbol.value; // value should always be lower than requested address.
+                return ZyanStringAppendFormat(string, "+%s+0x%", symbol.name.c_str(), diff);
+            }
         }
 
         return ZyanStringAppendFormat(string, "+off_%x", address);
@@ -223,10 +234,10 @@ static ZyanStatus UnasmFormatterFormatOperandPTR(
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
         ZyanString *string;
         ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-        const std::string &symbol = func->executable().get_symbol(address);
+        const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-        if (!symbol.empty()) {
-            return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+        if (!symbol.name.empty() && symbol.value == address) {
+            return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
         }
 
         return ZyanStringAppendFormat(string, "sub_%x", address);
@@ -235,10 +246,10 @@ static ZyanStatus UnasmFormatterFormatOperandPTR(
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
         ZyanString *string;
         ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
-        const std::string &symbol = func->executable().get_symbol(address);
+        const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
-        if (!symbol.empty()) {
-            return ZyanStringAppendFormat(string, "%s", symbol.c_str());
+        if (!symbol.name.empty() && symbol.value == address) {
+            return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
         }
 
         return ZyanStringAppendFormat(string, "unk_%x", address);
