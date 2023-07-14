@@ -4,6 +4,8 @@
 #include <iostream>
 #include <nlohmann/json.hpp>
 
+const char unassemblize::Executable::s_symbolSection[] = "symbols";
+
 unassemblize::Executable::Executable(const char *file_name, bool verbose) :
     m_binary(LIEF::Parser::parse(file_name)), m_endAddress(0), m_verbose(verbose)
 {
@@ -73,7 +75,7 @@ const unassemblize::Executable::Symbol &unassemblize::Executable::get_symbol(uin
     static Symbol def(empty, 0, 0);
     auto it = m_symbolMap.lower_bound(addr);
 
-    if (it != m_symbolMap.begin()) {
+    if (it != m_symbolMap.end()) {
         if (it->second.value == addr) {
             return it->second;
         } else {
@@ -87,9 +89,15 @@ const unassemblize::Executable::Symbol &unassemblize::Executable::get_symbol(uin
 void unassemblize::Executable::load_symbols(const char *file_name)
 {
     std::ifstream fs(file_name);
-    nlohmann::json j = nlohmann::json::parse(fs);
 
-    for (auto it = j.begin(); it != j.end(); ++it) {
+    if (!fs.good()) {
+        return;
+    }
+
+    nlohmann::json j = nlohmann::json::parse(fs);
+    auto &jsyms = j.at(s_symbolSection);
+
+    for (auto it = jsyms.begin(); it != jsyms.end(); ++it) {
         std::string name;
         it->at("name").get_to(name);
 
@@ -123,12 +131,28 @@ void unassemblize::Executable::dump_symbols(const char *file_name)
     auto exe_syms = m_binary->symbols();
     nlohmann::json j;
 
+    {
+        std::ifstream fs(file_name);
+
+        if (fs.good()) {
+            j = nlohmann::json::parse(fs);
+        }
+    }
+
     if (m_verbose) {
         printf("Dumping symbols to file '%s'...\n", file_name);
     }
 
+    // Remove symbols if it already exists and repopulate it.
+    if (j.find(s_symbolSection) != j.end()) {
+        j.erase(s_symbolSection);
+    }
+
+    j[s_symbolSection] = nlohmann::json();
+    auto &syms = j.at(s_symbolSection);
+
     for (auto it = exe_syms.begin(); it != exe_syms.end(); ++it) {
-        j.push_back({{"name", it->name()}, {"address", it->value()}, {"size", it->size()}});
+        syms.push_back({{"name", it->name()}, {"address", it->value()}, {"size", it->size()}});
     }
 
     std::ofstream fs(file_name);

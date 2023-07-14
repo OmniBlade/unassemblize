@@ -32,19 +32,19 @@ void print_help()
         "Usage:\n"
         "  unassemblize [OPTIONS] [INPUT]\n"
         "Options:\n"
-        "  -o --output     Filename for single file output.\n"
+        "  -o --output     Filename for single file output. Default is program.S\n"
         "  -f --format     Assembly output format.\n"
-        "  -m --manifest   Configuration file describing how to dissassemble the input\n"
-        "                  file.\n"
+        "  -c --config     Configuration file describing how to dissassemble the input\n"
+        "                  file and containing extra symbol info. Default: config.json\n"
         "  -s --start      Starting address of a single function to dissassemble in\n"
         "                  hexidecimal notation.\n"
         "  -e --end        Ending address of a single function to dissassemble in\n"
         "                  hexidecimal notation.\n"
-        "  -n --nametable  File containing address to symbols mappings.\n"
         "  -v --verbose    Verbose output on current state of the program.\n"
         "  --section       Section to target for dissassembly, defaults to '.text'.\n"
         "  --listsections  Prints a list of sections in the exe then exits.\n"
-        "  --dumpsyms      Dumps symbols stored in the executable to a json file then exits.\n"
+        "  -d --dumpsyms   Dumps symbols stored in the executable to the config file.\n"
+        "                  then exits.\n"
         "  -h --help       Displays this help.\n\n",
         revision,
         GitUncommittedChanges ? "~" : "",
@@ -67,9 +67,8 @@ int main(int argc, char **argv)
     }
 
     const char *section_name = ".text";
-    const char *output = nullptr;
-    const char *name_file = nullptr;
-    const char *manifest_file = nullptr;
+    const char *output = "program.S";
+    const char *config_file = "config.json";
     const char *format_string = nullptr;
     uint64_t start_addr = 0;
     uint64_t end_addr = 0;
@@ -83,8 +82,7 @@ int main(int argc, char **argv)
             {"format", required_argument, nullptr, 'f'},
             {"start", required_argument, nullptr, 's'},
             {"end", required_argument, nullptr, 'e'},
-            {"nametable", required_argument, nullptr, 'n'},
-            {"manifest", required_argument, nullptr, 'm'},
+            {"config", required_argument, nullptr, 'c'},
             {"section", required_argument, nullptr, 1},
             {"listsections", no_argument, nullptr, 2},
             {"dumpsyms", no_argument, nullptr, 3},
@@ -95,7 +93,7 @@ int main(int argc, char **argv)
 
         int option_index = 0;
 
-        int c = getopt_long(argc, argv, "+hv?o:f:s:e:n:f:m:", long_options, &option_index);
+        int c = getopt_long(argc, argv, "+hv?o:f:s:e:c:", long_options, &option_index);
 
         if (c == -1) {
             break;
@@ -123,11 +121,8 @@ int main(int argc, char **argv)
             case 'e':
                 end_addr = strtoull(optarg, nullptr, 16);
                 break;
-            case 'n':
-                name_file = optarg;
-                break;
-            case 'm':
-                manifest_file = optarg;
+            case 'c':
+                config_file = optarg;
                 break;
             case 'v':
                 verbose = true;
@@ -160,20 +155,15 @@ int main(int argc, char **argv)
     }
 
     if (dump_syms) {
-        if (output == nullptr) {
-            output = "syms.json";
-        }
-
-        exe.dump_symbols(output);
+        exe.dump_symbols(config_file);
         return 0;
     }
 
-    if (name_file != nullptr) {
-        if (verbose) {
-            printf("Loading external symbol file '%s'...\n", name_file);
-        }
-        exe.load_symbols(name_file);
+    if (verbose) {
+        printf("Loading external symbol file '%s'...\n", config_file);
     }
+
+    exe.load_symbols(config_file);
 
     FILE *fp = nullptr;
     if (output != nullptr) {

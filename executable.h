@@ -64,5 +64,7 @@ private:
     std::vector<std::string> m_loadedSymbols;
     uint64_t m_endAddress;
     bool m_verbose;
+
+    static const char s_symbolSection[];
 };
 }
