@@ -16,6 +16,7 @@
 #include <getopt.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <strings.h>
 
 void print_help()
 {
@@ -147,7 +148,18 @@ int main(int argc, char **argv)
         printf("Parsing executable file '%s'...\n", argv[optind]);
     }
 
-    unassemblize::Executable exe(argv[optind], verbose);
+    // TODO implement default value where exe object decides internally what to do.
+    unassemblize::Executable::OutputFormats format = unassemblize::Executable::OUTPUT_IGAS;
+
+    if (format_string != nullptr) {
+        if (strcasecmp(format_string, "igas") == 0) {
+            format = unassemblize::Executable::OUTPUT_IGAS;
+        } else if (strcasecmp(format_string, "masm") == 0) {
+            format = unassemblize::Executable::OUTPUT_MASM;
+        }
+    }
+
+    unassemblize::Executable exe(argv[optind], format, verbose);
 
     if (print_secs) {
         print_sections(exe);
@@ -155,42 +167,19 @@ int main(int argc, char **argv)
     }
 
     if (dump_syms) {
-        exe.dump_symbols(config_file);
+        exe.save_config(config_file);
         return 0;
     }
 
-    if (verbose) {
-        printf("Loading external symbol file '%s'...\n", config_file);
-    }
-
-    exe.load_symbols(config_file);
+    exe.load_config(config_file);
 
     FILE *fp = nullptr;
     if (output != nullptr) {
         fp = fopen(output, "w+");
     }
 
-    if (start_addr != 0 && end_addr != 0) {
-        unassemblize::Function func(exe, section_name, start_addr, end_addr);
-        func.disassemble();
-
-        if (fp != nullptr) {
-            const std::string &sym = exe.get_symbol(start_addr).name;
-
-            if (!sym.empty()) {
-                fprintf(fp, ".intel_syntax noprefix\n\n.globl %s\n%s:\n%s", sym.c_str(), sym.c_str(),
-                    func.dissassembly().c_str());
-            } else {
-                fprintf(fp,
-                    ".intel_syntax noprefix\n\n.globl sub_%" PRIx64 "\nsub_%" PRIx64 ":\n%s",
-                    start_addr,
-                    start_addr,
-                    func.dissassembly().c_str());
-            }
-        } else {
-            printf("%s", func.dissassembly().c_str());
-        }
-    }
+    fprintf(fp, ".intel_syntax noprefix\n\n");
+    exe.dissassemble_function(fp, section_name, start_addr, end_addr);
 
     return 0;
 }
