@@ -1,8 +1,9 @@
 #include "function.h"
 #include <Zydis/Zydis.h>
 #include <inttypes.h>
+#include <string.h>
 #include <sstream>
-#include <zycore/Format.h>
+#include <Zycore/Format.h>
 
 namespace
 {
