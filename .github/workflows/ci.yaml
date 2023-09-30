@@ -1,0 +1,50 @@
+name: Publish
+on:
+  push:
+    branches:
+      - "*"
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  publish:
+    name: "Build and publish unassemblize binary"
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Install prerequisite packages
+        run: |
+          sudo apt-get update && sudo apt-get install -y \
+            ccache \
+            clang \
+            clang-format \
+            cmake \
+            doxygen \
+            git \
+            graphviz
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Generate build configuration
+        run: |
+          mkdir build && cd build
+          cmake ..
+
+      - name: Fixup build configuration
+        run: |
+          sed -i 's/-fcolor-diagnostics//' build/_deps/lief-build/CMakeFiles/LIB_LIEF.dir/flags.make
+
+      - name: Compile
+        run: |
+          make -C build --jobs $(nproc)
+
+      - name: Upload build
+        uses: actions/upload-artifact@v3
+        with:
+          name: unassemblize
+          path: build/unassemblize
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: build/unassemblize
