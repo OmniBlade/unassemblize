@@ -73,7 +73,8 @@ unassemblize::Executable::Executable(const char *file_name, OutputFormats format
 
     for (auto it = exe_syms.begin(); it != exe_syms.end(); ++it) {
         if (it->value() != 0 && !it->name().empty() && m_symbolMap.find(it->value()) == m_symbolMap.end()) {
-            m_symbolMap.insert({it->value(), Symbol(it->name(), it->value(), it->size())});
+            uint64_t value = it->value() > m_binary->imagebase() ? it->value() : it->value() + m_binary->imagebase();
+            m_symbolMap.insert({it->value(), Symbol(it->name(), value, it->size())});
         }
     }
 
@@ -81,8 +82,9 @@ unassemblize::Executable::Executable(const char *file_name, OutputFormats format
 
     for (auto it = exe_imports.begin(); it != exe_imports.end(); ++it) {
         if (it->value() != 0 && !it->name().empty() && m_symbolMap.find(it->value()) == m_symbolMap.end()) {
+            uint64_t value = it->value() > m_binary->imagebase() ? it->value() : it->value() + m_binary->imagebase();
             m_loadedSymbols.push_back(it->name());
-            m_symbolMap.insert({it->value(), Symbol(m_loadedSymbols.back(), it->value(), it->size())});
+            m_symbolMap.insert({it->value(), Symbol(m_loadedSymbols.back(), value, it->size())});
         }
     }
 }
@@ -251,10 +253,6 @@ void unassemblize::Executable::load_symbols(nlohmann::json &js)
             }
 
             it->at("size").get_to(size);
-
-            if (size == 0) {
-                continue;
-            }
 
             // Only load symbols for addresses we don't have any symbol for yet.
             if (m_symbolMap.find(addr) == m_symbolMap.end()) {
