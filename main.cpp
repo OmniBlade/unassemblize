@@ -86,7 +86,7 @@ int main(int argc, char **argv)
             {"config", required_argument, nullptr, 'c'},
             {"section", required_argument, nullptr, 1},
             {"listsections", no_argument, nullptr, 2},
-            {"dumpsyms", no_argument, nullptr, 3},
+            {"dumpsyms", no_argument, nullptr, 'd'},
             {"verbose", no_argument, nullptr, 'v'},
             {"help", no_argument, nullptr, 'h'},
             {nullptr, no_argument, nullptr, 0},
@@ -94,7 +94,7 @@ int main(int argc, char **argv)
 
         int option_index = 0;
 
-        int c = getopt_long(argc, argv, "+hv?o:f:s:e:c:", long_options, &option_index);
+        int c = getopt_long(argc, argv, "+dhv?o:f:s:e:c:", long_options, &option_index);
 
         if (c == -1) {
             break;
@@ -107,7 +107,7 @@ int main(int argc, char **argv)
             case 2:
                 print_secs = true;
                 break;
-            case 3:
+            case 'd':
                 dump_syms = true;
                 break;
             case 'o':
