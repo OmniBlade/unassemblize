@@ -176,7 +176,7 @@ static ZyanStatus UnasmFormatterPrintIMM(
         ZyanString *string;
         ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
         auto it = func->labels().find(address);
-        return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
+        return ZyanStringAppendFormat(string, "offset %s", symbol.name.c_str());
     } else if (address >= func->section_address() && address <= func->section_end()) {
         // Probably a function if the address is in the current section.
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
@@ -186,13 +186,13 @@ static ZyanStatus UnasmFormatterPrintIMM(
 
         if (!symbol.name.empty()) {
             func->add_dependency(symbol.name);
-            return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
+            return ZyanStringAppendFormat(string, "offset %s", symbol.name.c_str());
         }
 
-        snprintf(hex_buff, sizeof(hex_buff), "sub_%" PRIx64, address);
+        snprintf(hex_buff, sizeof(hex_buff), "offset sub_%" PRIx64, address);
         func->add_dependency(hex_buff);
 
-        return ZyanStringAppendFormat(string, "sub_%" PRIx64, address);
+        return ZyanStringAppendFormat(string, "offset sub_%" PRIx64, address);
     } else if (address >= func->executable().base_address() && address <= (func->executable().end_address())) {
         // Data if in another section?
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
@@ -202,13 +202,13 @@ static ZyanStatus UnasmFormatterPrintIMM(
 
         if (!symbol.name.empty()) {
             func->add_dependency(symbol.name);
-            return ZyanStringAppendFormat(string, "%s", symbol.name.c_str());
+            return ZyanStringAppendFormat(string, "offfset %s", symbol.name.c_str());
         }
 
-        snprintf(hex_buff, sizeof(hex_buff), "off_%" PRIx64, address);
+        snprintf(hex_buff, sizeof(hex_buff), "offset off_%" PRIx64, address);
         func->add_dependency(hex_buff);
 
-        return ZyanStringAppendFormat(string, "off_%" PRIx64, address);
+        return ZyanStringAppendFormat(string, "offset off_%" PRIx64, address);
     }
 
     return default_print_immediate(formatter, buffer, context);
@@ -244,7 +244,7 @@ static ZyanStatus UnasmFormatterPrintDISP(
                 return ZyanStringAppendFormat(string, "+%s", symbol.name.c_str());
             } else {
                 uint64_t diff = address - symbol.value; // value should always be lower than requested address.
-                return ZyanStringAppendFormat(string, "+%s+0x%", symbol.name.c_str(), diff);
+                return ZyanStringAppendFormat(string, "+%s+0x%" PRIx64, symbol.name.c_str(), diff);
             }
         }
 
