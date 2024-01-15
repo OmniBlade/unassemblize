@@ -332,6 +332,27 @@ static ZyanStatus UnasmFormatterFormatOperandPTR(
     return default_format_operand_ptr(formatter, buffer, context);
 }
 
+ZydisFormatterRegisterFunc default_format_print_reg;
+
+static ZyanStatus UnasmFormatterFormatPrintRegister(
+    const ZydisFormatter *formatter, ZydisFormatterBuffer *buffer, ZydisFormatterContext *context, ZydisRegister reg)
+{
+    // Copied from internal FormatterBase.h
+#define ZYDIS_BUFFER_APPEND_TOKEN(buffer, type) \
+    if ((buffer)->is_token_list) { \
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, type)); \
+    }
+
+    if (reg >= ZYDIS_REGISTER_ST0 && reg <= ZYDIS_REGISTER_ST7) {
+        ZYDIS_BUFFER_APPEND_TOKEN(buffer, ZYDIS_TOKEN_REGISTER);
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        return ZyanStringAppendFormat(string, "st(%d)", reg - 69);
+    }
+
+    return default_format_print_reg(formatter, buffer, context, reg);
+}
+
 static ZyanStatus UnasmDisassembleCustom(ZydisMachineMode machine_mode, ZyanU64 runtime_address, const void *buffer,
     ZyanUSize length, ZydisDisassembledInstruction *instruction, void *user_data, ZydisFormatterStyle style)
 {
@@ -390,6 +411,9 @@ static ZyanStatus UnasmDisassembleCustom(ZydisMachineMode machine_mode, ZyanU64 
 
     default_format_operand_ptr = (ZydisFormatterFunc)&UnasmFormatterFormatOperandPTR;
     ZydisFormatterSetHook(&formatter, ZYDIS_FORMATTER_FUNC_FORMAT_OPERAND_PTR, (const void **)&default_format_operand_ptr);
+
+    default_format_print_reg = (ZydisFormatterRegisterFunc)&UnasmFormatterFormatPrintRegister;
+    ZydisFormatterSetHook(&formatter, ZYDIS_FORMATTER_FUNC_PRINT_REGISTER, (const void **)&default_format_print_reg);
 
     ZYAN_CHECK(ZydisFormatterFormatInstruction(&formatter,
         &instruction->info,
