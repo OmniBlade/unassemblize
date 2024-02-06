@@ -202,7 +202,7 @@ static ZyanStatus UnasmFormatterPrintIMM(
 
         if (!symbol.name.empty()) {
             func->add_dependency(symbol.name);
-            return ZyanStringAppendFormat(string, "offfset %s", symbol.name.c_str());
+            return ZyanStringAppendFormat(string, "offset %s", symbol.name.c_str());
         }
 
         snprintf(hex_buff, sizeof(hex_buff), "offset off_%" PRIx64, address);
@@ -332,6 +332,59 @@ static ZyanStatus UnasmFormatterFormatOperandPTR(
     return default_format_operand_ptr(formatter, buffer, context);
 }
 
+ZydisFormatterFunc default_format_operand_mem;
+
+static ZyanStatus UnasmFormatterFormatOperandMEM(
+    const ZydisFormatter *formatter, ZydisFormatterBuffer *buffer, ZydisFormatterContext *context)
+{
+    unassemblize::Function *func = static_cast<unassemblize::Function *>(context->user_data);
+    uint64_t address = context->operand->mem.disp.value;
+    char hex_buff[32];
+    const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
+
+    if (!symbol.name.empty()) {
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        auto it = func->labels().find(address);
+        return ZyanStringAppendFormat(string, "[%s]", symbol.name.c_str());
+    } else if (address >= func->section_address() && address <= func->section_end()) {
+        // Probably a function if the address is in the current section.
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
+
+        if (!symbol.name.empty()) {
+            func->add_dependency(symbol.name);
+            return ZyanStringAppendFormat(string, "[%s]", symbol.name.c_str());
+        }
+
+        snprintf(hex_buff, sizeof(hex_buff), "sub_%" PRIx64, address);
+        func->add_dependency(hex_buff);
+
+        return ZyanStringAppendFormat(string, "[sub_%" PRIx64 "]", address);
+    } else if (address >= func->executable().base_address() && address <= func->executable().end_address()) {
+        // Data if in another section?
+        ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
+        ZyanString *string;
+        ZYAN_CHECK(ZydisFormatterBufferGetString(buffer, &string));
+        const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
+
+        if (!symbol.name.empty()) {
+            func->add_dependency(symbol.name);
+            return ZyanStringAppendFormat(string, "[%s]", symbol.name.c_str());
+        }
+
+        snprintf(hex_buff, sizeof(hex_buff), "unk_%" PRIx64, address);
+        func->add_dependency(hex_buff);
+
+        return ZyanStringAppendFormat(string, "[unk_%" PRIx64 "]", address);
+    }
+
+    return default_format_operand_mem(formatter, buffer, context);
+}
+
 ZydisFormatterRegisterFunc default_format_print_reg;
 
 static ZyanStatus UnasmFormatterFormatPrintRegister(
@@ -411,6 +464,9 @@ static ZyanStatus UnasmDisassembleCustom(ZydisMachineMode machine_mode, ZyanU64 
 
     default_format_operand_ptr = (ZydisFormatterFunc)&UnasmFormatterFormatOperandPTR;
     ZydisFormatterSetHook(&formatter, ZYDIS_FORMATTER_FUNC_FORMAT_OPERAND_PTR, (const void **)&default_format_operand_ptr);
+
+    default_format_operand_mem = (ZydisFormatterFunc)&UnasmFormatterFormatOperandMEM;
+    ZydisFormatterSetHook(&formatter, ZYDIS_FORMATTER_FUNC_FORMAT_OPERAND_MEM, (const void **)&default_format_operand_mem);
 
     default_format_print_reg = (ZydisFormatterRegisterFunc)&UnasmFormatterFormatPrintRegister;
     ZydisFormatterSetHook(&formatter, ZYDIS_FORMATTER_FUNC_PRINT_REGISTER, (const void **)&default_format_print_reg);
