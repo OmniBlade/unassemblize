@@ -342,6 +342,11 @@ static ZyanStatus UnasmFormatterFormatOperandMEM(
     char hex_buff[32];
     const unassemblize::Executable::Symbol &symbol = func->executable().get_symbol(address);
 
+    if ((context->operand->mem.type == ZYDIS_MEMOP_TYPE_MEM) || (context->operand->mem.type == ZYDIS_MEMOP_TYPE_VSIB)) {
+        ZYAN_CHECK(formatter->func_print_typecast(formatter, buffer, context));
+    }
+    ZYAN_CHECK(formatter->func_print_segment(formatter, buffer, context));
+
     if (!symbol.name.empty()) {
         ZYAN_CHECK(ZydisFormatterBufferAppend(buffer, ZYDIS_TOKEN_SYMBOL));
         ZyanString *string;

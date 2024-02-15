@@ -31,14 +31,14 @@ unassemblize::Executable::Executable(const char *file_name, OutputFormats format
     m_dataAlignment(sizeof(uint32_t)),
     m_codePad(0x90), // NOP
     m_dataPad(0x00),
-    m_verbose(verbose)
+    m_verbose(verbose),
+    m_addBase(false)
 {
     if (m_verbose) {
         printf("Loading section info...\n");
     }
 
     bool checked_image_base = false;
-    bool add_image_base = false;
 
     for (auto it = m_binary->sections().begin(); it != m_binary->sections().end(); ++it) {
         if (!it->name().empty() && it->size() != 0) {
@@ -47,11 +47,11 @@ unassemblize::Executable::Executable(const char *file_name, OutputFormats format
 
             // Check on first section incase binary is huge and later sections start higher than imagebase.
             if (!checked_image_base && it->virtual_address() <= m_binary->imagebase()) {
-                add_image_base = true;
+                m_addBase = true;
             }
 
             // For PE format virtual_address appears to be an offset, in ELF/Mach-O it appears to be absolute.
-            if (add_image_base) {
+            if (m_addBase) {
                 section.address = m_binary->imagebase() + it->virtual_address();
             } else {
                 section.address = it->virtual_address();
